@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; max-width: 420px; margin: 0 auto; color: #222; }
+    h3 { margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #666; margin-bottom: 16px; }
+    .item {
+      display: flex; align-items: center; gap: 12px;
+      border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+    }
+    .item.done { opacity: 0.55; }
+    .item .label { flex: 1; }
+    .item .topic { font-size: 15px; }
+    .item.done .topic { text-decoration: line-through; }
+    .desk { font-size: 13px; color: #666; }
+    input[type=checkbox] { width: 20px; height: 20px; }
+    input[type=email] { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; }
+    button { padding: 8px 16px; }
+    .empty { color: #666; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h3>Mijn Marketplace checklist</h3>
+  <div class="sub" id="status">Bezig met laden...</div>
+
+  <div id="emailForm" style="display:none">
+    <p>We konden je niet automatisch herkennen. Vul het e-mailadres in waarmee je inschreef:</p>
+    <input type="email" id="emailInput" placeholder="naam@bedrijf.be">
+    <button onclick="submitEmail()">Toon mijn checklist</button>
+  </div>
+
+  <div id="list"></div>
+
+  <script>
+    function load(manualEmail) {
+      document.getElementById('status').textContent = 'Bezig met laden...';
+      google.script.run.withSuccessHandler(render).withFailureHandler(showError).getMyChecklist(manualEmail || null);
+    }
+
+    function showError(err) {
+      document.getElementById('status').textContent = 'Er ging iets mis: ' + err.message;
+    }
+
+    function render(data) {
+      if (data.needsEmail) {
+        document.getElementById('status').textContent = data.notFound
+          ? 'Geen inschrijving gevonden met dat e-mailadres.'
+          : '';
+        document.getElementById('emailForm').style.display = 'block';
+        document.getElementById('list').innerHTML = '';
+        return;
+      }
+
+      document.getElementById('emailForm').style.display = 'none';
+      var remaining = data.items.filter(function (it) { return !it.bezocht; }).length;
+      document.getElementById('status').textContent =
+        'Nog te bezoeken: ' + remaining + ' van ' + data.items.length;
+
+      if (!data.items.length) {
+        document.getElementById('list').innerHTML = '<p class="empty">Geen topics gevonden voor dit e-mailadres.</p>';
+        return;
+      }
+
+      document.getElementById('list').innerHTML = data.items.map(function (it) {
+        return '<div class="item ' + (it.bezocht ? 'done' : '') + '">' +
+          '<input type="checkbox" ' + (it.bezocht ? 'checked' : '') +
+          ' onchange="toggle(' + data.rowIndex + ',\'' + escapeForAttribute(it.topic) + '\',this.checked,this)">' +
+          '<div class="label"><div class="topic">' + escapeHtml(it.topic) + '</div><div class="desk">' + escapeHtml(it.desk) + '</div></div>' +
+          '</div>';
+      }).join('');
+    }
+
+    // For use inside a single-quoted JS string literal within a
+    // double-quoted HTML attribute (onchange="...'...'...").
+    function escapeForAttribute(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;');
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function toggle(rowIndex, topic, checked, checkboxEl) {
+      checkboxEl.closest('.item').classList.toggle('done', checked);
+      google.script.run.setBezocht(rowIndex, topic, checked);
+      // update the status counter live, without reloading
+      var doneCount = document.querySelectorAll('.item.done').length;
+      var total = document.querySelectorAll('.item').length;
+      document.getElementById('status').textContent = 'Nog te bezoeken: ' + (total - doneCount) + ' van ' + total;
+    }
+
+    function submitEmail() {
+      load(document.getElementById('emailInput').value.trim());
+    }
+
+    load();
+  </script>
+</body>
+</html>
