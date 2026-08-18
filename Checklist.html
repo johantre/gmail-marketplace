@@ -6,7 +6,9 @@
   <style>
     body { font-family: Arial, sans-serif; padding: 16px; max-width: 420px; margin: 0 auto; color: #222; }
     h3 { margin-bottom: 4px; }
-    .sub { font-size: 13px; color: #666; margin-bottom: 16px; }
+    .headerRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+    .sub { font-size: 13px; color: #666; }
+    #toggleViewBtn { padding: 6px 10px; font-size: 13px; white-space: nowrap; }
     .item {
       display: flex; align-items: center; gap: 12px;
       border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px;
@@ -16,15 +18,48 @@
     .item .topic { font-size: 15px; }
     .item.done .topic { text-decoration: line-through; }
     .desk { font-size: 13px; color: #666; }
+    .deskLink { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+    .pin-icon.pin-inline { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 2px; }
     input[type=checkbox] { width: 20px; height: 20px; }
     input[type=email] { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; }
     button { padding: 8px 16px; }
     .empty { color: #666; font-size: 14px; }
+
+    /* ---- Plattegrond view ---- */
+    .mapWrap { position: relative; width: 100%; }
+    #mapContent { position: relative; }
+    .planImg { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; }
+    .pinsLayer { position: absolute; inset: 0; }
+    .plek { position: absolute; text-align: center; transform: translate(-50%, -100%); }
+    .plek.done { transform: translate(-50%, -50%); }
+    .pinwrap { position: relative; display: inline-block; }
+    .pin-icon { display: block; }
+    .pin-grey { filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
+    .pin-red { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); animation: pinPulse 1.1s ease-in-out infinite; }
+    @keyframes pinPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+    .ring {
+      position: absolute; left: 50%; top: 50%; width: 30px; height: 30px;
+      margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(229,57,53,.5);
+      animation: ping 1.4s cubic-bezier(0,0,.2,1) infinite;
+    }
+    @keyframes ping { 0% { transform: scale(.6); opacity: .55; } 100% { transform: scale(2.2); opacity: 0; } }
+    .done-check { font-size: 22px; line-height: 1; }
+    .lbl {
+      font-size: 11px; background: rgba(255,255,255,.88); padding: 1px 5px; border-radius: 4px;
+      margin-top: 2px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+    .plek.done .lbl { font-weight: bold; color: #1e7d34; }
+    .plek.active .lbl, .plek.todo .lbl { font-weight: bold; color: #333; }
   </style>
 </head>
 <body>
-  <h3>Mijn Marketplace checklist</h3>
-  <div class="sub" id="status">Bezig met laden...</div>
+  <div class="headerRow">
+    <div>
+      <h3>Mijn Marketplace checklist</h3>
+      <div class="sub" id="status">Bezig met laden...</div>
+    </div>
+    <button id="toggleViewBtn" onclick="toggleView()" style="display:none">🗺️ Plan</button>
+  </div>
 
   <div id="emailForm" style="display:none">
     <p>We konden je niet automatisch herkennen. Vul het e-mailadres in waarmee je inschreef:</p>
@@ -34,7 +69,29 @@
 
   <div id="list"></div>
 
+  <div id="mapView" style="display:none">
+    <div class="sub" id="mapStatus"></div>
+    <div class="mapWrap">
+      <div id="mapContent"></div>
+    </div>
+  </div>
+
   <script>
+    var lastData = null;       // last getMyChecklist() response
+    var plattegrondData = null; // cached getPlattegrondVoorChecklist() response
+    var activePlekLabel = null; // desk the visitor just tapped "toon op plattegrond" for
+    var mapView = false;
+
+    // Rounded "map pin" teardrop (Heroicons-style, not the old boxy
+    // Material Icons "place" glyph) — evenodd fill-rule so the circular
+    // hole always punches through cleanly regardless of path winding.
+    var PIN_PATH = 'M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.847 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z';
+
+    function pinSvg(color, cls) {
+      return '<svg class="pin-icon ' + (cls || '') + '" viewBox="0 0 24 24" width="30" height="30">' +
+        '<path d="' + PIN_PATH + '" fill="' + color + '" fill-rule="evenodd" clip-rule="evenodd"/></svg>';
+    }
+
     function load(manualEmail) {
       document.getElementById('status').textContent = 'Bezig met laden...';
       google.script.run.withSuccessHandler(render).withFailureHandler(showError).getMyChecklist(manualEmail || null);
@@ -51,10 +108,13 @@
           : '';
         document.getElementById('emailForm').style.display = 'block';
         document.getElementById('list').innerHTML = '';
+        document.getElementById('toggleViewBtn').style.display = 'none';
         return;
       }
 
+      lastData = data;
       document.getElementById('emailForm').style.display = 'none';
+      document.getElementById('toggleViewBtn').style.display = data.items.length ? 'inline-block' : 'none';
       var remaining = data.items.filter(function (it) { return !it.bezocht; }).length;
       document.getElementById('status').textContent =
         'Nog te bezoeken: ' + remaining + ' van ' + data.items.length;
@@ -68,9 +128,14 @@
         return '<div class="item ' + (it.bezocht ? 'done' : '') + '">' +
           '<input type="checkbox" ' + (it.bezocht ? 'checked' : '') +
           ' onchange="toggle(' + data.rowIndex + ',\'' + escapeForAttribute(it.topic) + '\',this.checked,this)">' +
-          '<div class="label"><div class="topic">' + escapeHtml(it.topic) + '</div><div class="desk">' + escapeHtml(it.desk) + '</div></div>' +
+          '<div class="label"><div class="topic">' + escapeHtml(it.topic) + '</div>' +
+          '<div class="desk deskLink" onclick="showOnMap(\'' + escapeForAttribute(it.desk) + '\')">' +
+          pinSvg('#E53935', 'pin-inline') + escapeHtml(it.desk) + '</div></div>' +
           '</div>';
       }).join('');
+
+      // Re-render the map if it happens to be open already (e.g. after a checkbox toggle).
+      if (mapView) renderMap();
     }
 
     // For use inside a single-quoted JS string literal within a
@@ -93,6 +158,10 @@
     function toggle(rowIndex, topic, checked, checkboxEl) {
       checkboxEl.closest('.item').classList.toggle('done', checked);
       google.script.run.setBezocht(rowIndex, topic, checked);
+      // Keep the in-memory checklist (used by the map view) in sync too.
+      if (lastData) {
+        lastData.items.forEach(function (it) { if (it.topic === topic) it.bezocht = checked; });
+      }
       // update the status counter live, without reloading
       var doneCount = document.querySelectorAll('.item.done').length;
       var total = document.querySelectorAll('.item').length;
@@ -101,6 +170,117 @@
 
     function submitEmail() {
       load(document.getElementById('emailInput').value.trim());
+    }
+
+    // ---------------- Plattegrond view ----------------
+
+    function toggleView() {
+      mapView = !mapView;
+      if (mapView) {
+        activePlekLabel = null;
+        showMap();
+      } else {
+        showList();
+      }
+    }
+
+    // Called from a checklist item's desk label — jumps straight to the map
+    // with THAT desk highlighted red/pulsing, distinct from the other
+    // still-to-do desks (shown plain grey).
+    function showOnMap(desk) {
+      activePlekLabel = desk;
+      mapView = true;
+      showMap();
+    }
+
+    function showMap() {
+      document.getElementById('list').style.display = 'none';
+      document.getElementById('mapView').style.display = 'block';
+      document.getElementById('toggleViewBtn').textContent = '📋 Lijst';
+      if (!plattegrondData) {
+        document.getElementById('mapStatus').textContent = 'Kaart wordt geladen...';
+        google.script.run.withSuccessHandler(function (d) {
+          plattegrondData = d;
+          renderMap();
+        }).withFailureHandler(showError).getPlattegrondVoorChecklist();
+      } else {
+        renderMap();
+      }
+    }
+
+    function showList() {
+      document.getElementById('mapView').style.display = 'none';
+      document.getElementById('list').style.display = 'block';
+      document.getElementById('toggleViewBtn').textContent = '🗺️ Plan';
+    }
+
+    // Marker state per plek, based on the visitor's OWN checklist items
+    // whose desk matches this plek's label (a plek can host multiple
+    // topics). A plek with no matching item isn't shown at all — it's not
+    // where this visitor needs to go, and just adds clutter to the map.
+    // done = every matching item is bezocht; active = the specific plek
+    // the visitor just tapped "📍" for, still has something to do (red,
+    // pulsing); todo = any other plek that still has something to do
+    // (grey, static).
+    function renderMap() {
+      document.getElementById('mapStatus').textContent = '';
+      var items = (lastData && lastData.items) || [];
+      var pinsHtml = plattegrondData.plekken
+        .filter(function (p) { return items.some(function (it) { return it.desk === p.label; }); })
+        .map(function (p) {
+          var matches = items.filter(function (it) { return it.desk === p.label; });
+          var cls, inner;
+          if (matches.every(function (it) { return it.bezocht; })) {
+            cls = 'done';
+            inner = '<span class="done-check">✅</span>';
+          } else if (p.label === activePlekLabel) {
+            cls = 'active';
+            inner = '<div class="pinwrap"><div class="ring"></div>' + pinSvg('#E53935', 'pin-red') + '</div>';
+          } else {
+            cls = 'todo';
+            inner = '<div class="pinwrap">' + pinSvg('#8A8A8A', 'pin-grey') + '</div>';
+          }
+          return '<div class="plek ' + cls + '" style="left:' + p.x + '%;top:' + p.y + '%">' +
+            inner + '<div class="lbl">' + escapeHtml(p.label) + '</div></div>';
+        }).join('');
+
+      document.getElementById('mapContent').innerHTML =
+        '<img src="' + plattegrondData.image + '" class="planImg" alt="Plattegrond" onload="resolveLabelOverlaps()">' +
+        '<div class="pinsLayer">' + pinsHtml + '</div>';
+    }
+
+    // Pins can sit close together (e.g. the meeting-room cluster), which
+    // makes their text labels overlap. Pushes each label straight down
+    // (never the pin/icon itself — that has to stay on the exact tagged
+    // spot) just far enough to clear any label already placed above it.
+    // Runs from the <img>'s onload, not right after innerHTML is set: the
+    // map container's height (and therefore every %-based pin position)
+    // only becomes final once the floor plan image has actually loaded.
+    function resolveLabelOverlaps() {
+      var labels = document.querySelectorAll('#mapContent .lbl');
+      var GAP = 2, STEP = 4, MAX_PUSH = 60;
+      var placed = [];
+
+      Array.prototype.slice.call(labels)
+        .sort(function (a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; })
+        .forEach(function (label) {
+          label.style.marginTop = '';
+          var rect = label.getBoundingClientRect();
+          var box = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+          var pushed = 0;
+
+          while (pushed < MAX_PUSH && placed.some(function (p) {
+            return box.left < p.right + GAP && box.right > p.left - GAP &&
+              box.top < p.bottom + GAP && box.bottom > p.top - GAP;
+          })) {
+            pushed += STEP;
+            box.top = rect.top + pushed;
+            box.bottom = rect.bottom + pushed;
+          }
+
+          if (pushed) label.style.marginTop = pushed + 'px';
+          placed.push(box);
+        });
     }
 
     load();

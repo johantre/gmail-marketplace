@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 12px 16px; color: #222; }
+    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    button { padding: 7px 14px; cursor: pointer; }
+    .status { font-size: 13px; color: #666; }
+    .status.error { color: #c62828; font-weight: bold; }
+    .hint { font-size: 12px; color: #666; margin: 0 0 10px; }
+
+    .mapWrap { position: relative; width: 100%; max-width: 860px; user-select: none; }
+    #mapContent { position: relative; }
+    .planImg { display: block; width: 100%; height: auto; border-radius: 6px; border: 1px solid #ccc; }
+    /* pointer-events:none so a click on an EMPTY part of the map falls
+       through to the <img> underneath (mapClick -> add a new pin) — only
+       the individual .plek elements (re-enabled below) intercept clicks,
+       for rename/drag/(de)activate. Without this, the full-coverage
+       overlay div would swallow every click and the image's own onclick
+       would never fire. */
+    .pinsLayer { position: absolute; inset: 0; pointer-events: none; }
+
+    .plek { position: absolute; transform: translate(-50%, -50%); text-align: center; pointer-events: auto; }
+    .dot {
+      width: 16px; height: 16px; border-radius: 50%; margin: 0 auto;
+      background: #1F3864; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.5);
+      cursor: grab; touch-action: none;
+    }
+    .plek.inactive .dot { background: #b0b0b0; }
+    .plek.dragging .dot { cursor: grabbing; }
+    .lbl {
+      display: inline-block; font-size: 11px; background: rgba(255,255,255,.92); padding: 1px 5px;
+      border-radius: 4px; margin-top: 2px; white-space: nowrap; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,.2);
+    }
+    .plek.inactive .lbl { color: #888; text-decoration: line-through; }
+    .toggleBtn {
+      display: inline-block; font-size: 10px; margin-left: 3px; padding: 0 3px; cursor: pointer;
+      background: #fff; border: 1px solid #999; border-radius: 3px;
+    }
+
+    .untaggedBox { margin-top: 14px; }
+    .untaggedBox h4 { margin: 0 0 6px; font-size: 13px; }
+    .untaggedRow {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-size: 13px; padding: 4px 0; border-bottom: 1px solid #eee;
+    }
+    .untaggedRow.placing { background: #fff3cd; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="importFromConfig()">📥 Importeer bureaus uit Config</button>
+    <span class="status" id="status">Bezig met laden...</span>
+  </div>
+  <p class="hint">
+    Klik op een lege plek op de kaart om een nieuwe plek toe te voegen. Klik op een naam om te
+    hernoemen. Sleep een pin (bolletje) om te verplaatsen. Klik op ✕/↺ om een plek te (de)activeren.
+  </p>
+
+  <div class="mapWrap">
+    <div id="mapContent"></div>
+  </div>
+
+  <div class="untaggedBox" id="untaggedBox"></div>
+
+  <script>
+    var data = null;           // last getPlattegrondVoorBeheer() response
+    var placingRowIndex = null; // when set: the next map click positions THIS plek instead of creating a new one
+    var dragState = null;       // { rowIndex, plekEl } while dragging a pin
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function setStatus(msg, isError) {
+      var el = document.getElementById('status');
+      el.textContent = msg || '';
+      el.classList.toggle('error', !!isError);
+    }
+
+    function load() {
+      setStatus('Bezig met laden...');
+      google.script.run.withSuccessHandler(onLoaded).withFailureHandler(onError).getPlattegrondVoorBeheer();
+    }
+
+    function onLoaded(d) {
+      data = d;
+      setStatus('');
+      renderMap();
+      renderUntagged();
+    }
+
+    function onError(err) {
+      setStatus('Er ging iets mis: ' + err.message, true);
+    }
+
+    function importFromConfig() {
+      setStatus('Bureaus importeren...');
+      google.script.run.withSuccessHandler(function (added) {
+        setStatus(added.length ? 'Toegevoegd: ' + added.join(', ') : 'Niets nieuws te importeren — alles staat al in Plattegrond.');
+        load();
+      }).withFailureHandler(onError).importDeskenVanuitConfig();
+    }
+
+    function renderMap() {
+      var pinsHtml = data.plekken
+        .filter(function (p) { return p.x !== null && p.y !== null; })
+        .map(function (p) {
+          var placingCls = p.rowIndex === placingRowIndex ? ' placing' : '';
+          return '<div class="plek ' + (p.actief ? 'active' : 'inactive') + placingCls + '" ' +
+            'style="left:' + p.x + '%;top:' + p.y + '%" data-row="' + p.rowIndex + '">' +
+            '<div class="dot" onpointerdown="startDrag(event,' + p.rowIndex + ')"></div>' +
+            '<div class="lbl" onclick="event.stopPropagation();renamePrompt(' + p.rowIndex + ')">' +
+            escapeHtml(p.label) +
+            '<span class="toggleBtn" onclick="event.stopPropagation();toggleActief(' + p.rowIndex + ',' + !p.actief + ')">' +
+            (p.actief ? '✕' : '↺') + '</span>' +
+            '</div></div>';
+        }).join('');
+
+      document.getElementById('mapContent').innerHTML =
+        '<img src="' + data.image + '" class="planImg" alt="Plattegrond" onclick="mapClick(event)" onload="resolveLabelOverlaps()">' +
+        '<div class="pinsLayer">' + pinsHtml + '</div>';
+    }
+
+    // Pins can sit close together (e.g. the meeting-room cluster), which
+    // makes their text labels overlap. Pushes each label straight down
+    // (never the pin/dot itself — that has to stay on the exact tagged
+    // spot) just far enough to clear any label already placed above it.
+    // Runs from the <img>'s onload, not right after innerHTML is set: the
+    // map container's height (and therefore every %-based pin position)
+    // only becomes final once the floor plan image has actually loaded.
+    function resolveLabelOverlaps() {
+      var labels = document.querySelectorAll('#mapContent .lbl');
+      var GAP = 2, STEP = 4, MAX_PUSH = 60;
+      var placed = [];
+
+      Array.prototype.slice.call(labels)
+        .sort(function (a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; })
+        .forEach(function (label) {
+          label.style.marginTop = '';
+          var rect = label.getBoundingClientRect();
+          var box = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+          var pushed = 0;
+
+          while (pushed < MAX_PUSH && placed.some(function (p) {
+            return box.left < p.right + GAP && box.right > p.left - GAP &&
+              box.top < p.bottom + GAP && box.bottom > p.top - GAP;
+          })) {
+            pushed += STEP;
+            box.top = rect.top + pushed;
+            box.bottom = rect.bottom + pushed;
+          }
+
+          if (pushed) label.style.marginTop = pushed + 'px';
+          placed.push(box);
+        });
+    }
+
+    function renderUntagged() {
+      var untagged = data.plekken.filter(function (p) { return p.x === null || p.y === null; });
+      var box = document.getElementById('untaggedBox');
+      if (!untagged.length) { box.innerHTML = ''; return; }
+
+      box.innerHTML = '<h4>Nog te positioneren</h4>' + untagged.map(function (p) {
+        var placing = p.rowIndex === placingRowIndex;
+        return '<div class="untaggedRow' + (placing ? ' placing' : '') + '">' +
+          '<span>#' + p.plekNr + ' — ' + escapeHtml(p.label) + '</span>' +
+          '<button onclick="armPlacing(' + p.rowIndex + ')">' +
+          (placing ? '👉 Klik op de kaart...' : '🎯 Plaats op kaart') + '</button>' +
+          '</div>';
+      }).join('');
+    }
+
+    function armPlacing(rowIndex) {
+      placingRowIndex = rowIndex;
+      setStatus('Klik op de kaart om de positie te zetten.');
+      renderUntagged();
+    }
+
+    // Converts a click/pointer event's page position into a 0-100 percentage
+    // relative to the floor plan image's own rendered box.
+    function pctFromEvent(evt) {
+      var rect = document.getElementById('mapContent').getBoundingClientRect();
+      var x = (evt.clientX - rect.left) / rect.width * 100;
+      var y = (evt.clientY - rect.top) / rect.height * 100;
+      return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+    }
+
+    function mapClick(evt) {
+      var pct = pctFromEvent(evt);
+
+      if (placingRowIndex !== null) {
+        var rowIndex = placingRowIndex;
+        placingRowIndex = null;
+        setStatus('Positie opslaan...');
+        google.script.run.withSuccessHandler(function (plekken) {
+          data.plekken = plekken;
+          setStatus('');
+          renderMap();
+          renderUntagged();
+        }).withFailureHandler(onError).updatePlekPositie(rowIndex, pct.x, pct.y);
+        return;
+      }
+
+      var naam = window.prompt('Naam van deze nieuwe plek:');
+      if (!naam || !naam.trim()) return;
+      setStatus('Toevoegen...');
+      google.script.run.withSuccessHandler(function (plekken) {
+        data.plekken = plekken;
+        setStatus('');
+        renderMap();
+        renderUntagged();
+      }).withFailureHandler(onError).addPlek(naam.trim(), pct.x, pct.y);
+    }
+
+    function renamePrompt(rowIndex) {
+      var plek = data.plekken.filter(function (p) { return p.rowIndex === rowIndex; })[0];
+      if (!plek) return;
+      var naam = window.prompt('Nieuwe naam voor deze plek:', plek.label);
+      if (naam === null || !naam.trim() || naam.trim() === plek.label) return;
+      setStatus('Hernoemen...');
+      google.script.run.withSuccessHandler(function (plekken) {
+        data.plekken = plekken;
+        setStatus('Hernoemd — bijhorende cellen in Config zijn automatisch mee aangepast.');
+        renderMap();
+        renderUntagged();
+      }).withFailureHandler(onError).renamePlek(rowIndex, naam.trim());
+    }
+
+    function toggleActief(rowIndex, newActief) {
+      setStatus(newActief ? 'Activeren...' : 'Deactiveren...');
+      google.script.run.withSuccessHandler(function (plekken) {
+        data.plekken = plekken;
+        setStatus('');
+        renderMap();
+        renderUntagged();
+      }).withFailureHandler(onError).setPlekActief(rowIndex, newActief);
+    }
+
+    // ---- Drag to reposition ----
+    function startDrag(evt, rowIndex) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      var plekEl = evt.target.closest('.plek');
+      dragState = { rowIndex: rowIndex, plekEl: plekEl };
+      plekEl.classList.add('dragging');
+      document.addEventListener('pointermove', onDragMove);
+      document.addEventListener('pointerup', onDragEnd);
+    }
+
+    function onDragMove(evt) {
+      if (!dragState) return;
+      var pct = pctFromEvent(evt);
+      dragState.plekEl.style.left = pct.x + '%';
+      dragState.plekEl.style.top = pct.y + '%';
+      dragState.lastPct = pct;
+    }
+
+    function onDragEnd(evt) {
+      document.removeEventListener('pointermove', onDragMove);
+      document.removeEventListener('pointerup', onDragEnd);
+      if (!dragState) return;
+      var rowIndex = dragState.rowIndex;
+      var pct = dragState.lastPct || pctFromEvent(evt);
+      dragState.plekEl.classList.remove('dragging');
+      dragState = null;
+
+      setStatus('Positie opslaan...');
+      google.script.run.withSuccessHandler(function (plekken) {
+        data.plekken = plekken;
+        setStatus('');
+        renderMap();
+      }).withFailureHandler(onError).updatePlekPositie(rowIndex, pct.x, pct.y);
+    }
+
+    load();
+  </script>
+</body>
+</html>

@@ -9,15 +9,18 @@
 // ============================================================
 function setupSheetStructure() {
   ensureConfigSheet();
+  ensurePlattegrondSheet();
+  applyDeskDropdownValidation();
   ensureInstellingenSheet();
   ensureQrCodesSheet();
   syncAanmeldingenColumns();
   ensureDashboard();
   ensureJiraSheet();
   SpreadsheetApp.getUi().alert(
-    'Sheet structure ready: Config, Instellingen, QR-codes, Aanmeldingen, ' +
-    'Dashboard and Jira tabs are all set up.\n\nFill in Config and Instellingen, ' +
-    'then click "🔄 Sync topics Subscription form".'
+    'Sheet structure ready: Config, Plattegrond, Instellingen, QR-codes, ' +
+    'Aanmeldingen, Dashboard and Jira tabs are all set up.\n\nFill in Config and ' +
+    'Instellingen, use "🗺️Plattegrond beheren" to tag desk locations on the floor ' +
+    'plan, then click "🔄 Sync topics Subscription form".'
   );
 }
 
@@ -41,6 +44,10 @@ var JIRA_PROJECT_KEY = 'Jira project';
 var MAX_JIRA_ITEMS_KEY = 'Max Jira items';
 var JIRA_KOLOMMEN_KEY = 'Jira kolommen';
 var JIRA_CONFIG_MAPPING_KEY = 'Jira naar Config';
+// Same reserved-key class — read directly by getPlattegrondImageDataUrl()
+// (PlattegrondImage.gs) to know which file to look for in the "res" Drive
+// folder next to this Spreadsheet.
+var PLATTEGROND_IMAGE_NAME_KEY = 'Plattegrond afbeelding';
 // Default value = the key name itself (e.g. "Review titel" gets "Review
 // titel" as its starting value) — recognizable as "not filled in yet" if
 // it ever shows up unreplaced in a generated presentation.
@@ -65,6 +72,7 @@ function getInstellingenSeedRows() {
     ['Review titel', 'Review titel', 'Reserved for the script — also used in the filename of every generated presentation. Variable — do not delete or rename.'],
     ['Sprint goal', 'Sprint goal', ''],
     [MAX_TOPICS_PER_SLIDE_KEY, '10', 'Reserved for the script — determines how many topics fit per page in the presentation. Variable — do not delete or rename.'],
+    [PLATTEGROND_IMAGE_NAME_KEY, 'floorplan.png', 'Reserved for the script — filename of the floor plan PNG, looked up in a folder named "res" next to this Spreadsheet in Drive. Variable — do not delete or rename.'],
     [JIRA_FILTER_ID_KEY, '', 'Reserved for the script — ID of the saved Jira filter that "🔷Fetch from Jira" fetches (found in the filter\'s URL in Jira, e.g. .../issues/?filter=12345 → ID is 12345). Variable — do not delete or rename.'],
     [JIRA_PROJECT_KEY, '', 'Reserved for the script — optional: project key (e.g. ROB) to restrict results to 1 project on top of the filter itself. Empty = just the filter\'s own scope. Variable — do not delete or rename.'],
     [MAX_JIRA_ITEMS_KEY, '20', 'Reserved for the script — upper limit on how many Jira issues get fetched at once. Variable — do not delete or rename.'],

@@ -26,6 +26,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🛍️Marketplace tools')
     .addItem('📋Sheet structure setup/rebuild', 'setupSheetStructure')
+    .addItem('🗺️Plattegrond beheren', 'openPlattegrondBeheer')
     .addItem('🔄 Sync topics Subscription form', 'generateForm')
     .addItem('🖥️Generate Presentation', 'generateSlides')
     .addItem('🔁 Regenerate Checklist QR', 'showChecklistLink')

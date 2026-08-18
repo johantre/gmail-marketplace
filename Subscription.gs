@@ -226,6 +226,19 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+// ?floorplanSync=<token> (POST, see handleFloorplanSyncRequest() in
+// PlattegrondImage.gs) — CI-only endpoint that uploads a fresh floor plan
+// PNG into Drive. A separate doPost() rather than folded into doGet()
+// above: the base64-encoded PNG travels as the POST body, far too large
+// for a GET query string like ?selftest= uses.
+function doPost(e) {
+  if (e.parameter.floorplanSync) {
+    return handleFloorplanSyncRequest(e.parameter.floorplanSync, e.postData ? e.postData.contents : '');
+  }
+  return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unknown POST endpoint' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 // Called from Checklist.html. First tries to recognize the logged-in
 // Workspace user; falls back to a manual email address (needed once
 // external users get access, without changing this function).

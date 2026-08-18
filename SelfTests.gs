@@ -179,5 +179,25 @@ function runSelfTestsCore() {
   var resolvedWithTypo = resolveConfigRowFromJiraRow(mappingWithTypo, jiraHeader, jiraRow);
   assertEqual_(resolvedWithTypo.Desk, '', 'a mapping entry referencing a non-existent Jira tab column must resolve to blank, not throw'); checks++;
 
+  // isLabelTaken (Plattegrond.gs): must catch a duplicate regardless of
+  // case/surrounding whitespace (Labels feed a visitor-facing dropdown —
+  // "Team Rocket" and "team rocket " are the same desk), and must ignore
+  // the row being compared against itself (renamePlek() re-checks the
+  // FULL list including the row it's about to rename).
+  var plekken = [
+    { rowIndex: 2, label: 'Team Rocket' },
+    { rowIndex: 3, label: 'Bureau 1A' }
+  ];
+  assertEqual_(isLabelTaken(plekken, ' team rocket ', -1), true, 'a duplicate label must be caught case-insensitively and trimmed'); checks++;
+  assertEqual_(isLabelTaken(plekken, 'Bureau 2C', -1), false, 'a genuinely new label must not be flagged as taken'); checks++;
+  assertEqual_(isLabelTaken(plekken, 'Team Rocket', 2), false, 'a row must not collide with its own current label when renaming'); checks++;
+  assertEqual_(isLabelTaken(plekken, 'Bureau 1A', 2), true, 'renaming row 2 to another row\'s existing label must still be caught'); checks++;
+
+  // nextPlekNr (Plattegrond.gs): PlekNr is a permanent, ever-increasing
+  // number — never reused, even for an empty list or one with gaps
+  // (a deactivated/never-cleaned-up plek must not free up its number).
+  assertEqual_(nextPlekNr([]), 1, 'the first plek ever must get PlekNr 1'); checks++;
+  assertEqual_(nextPlekNr([{ plekNr: 1 }, { plekNr: 3 }]), 4, 'next PlekNr must be one above the current highest, gaps included'); checks++;
+
   return checks;
 }

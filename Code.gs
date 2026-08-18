@@ -12,6 +12,11 @@
 //                        getLastLoggedLink)
 //   Sheets.gs         - Config/Instellingen/QR-codes/Aanmeldingen/
 //                        Dashboard structure setup
+//   Plattegrond.gs    - the Plattegrond tab (PlekNr/Label/X%/Y%/Actief),
+//                        the Config!Desk dropdown, and the tagging dialog's
+//                        backend (add/rename/reposition/(de)activate a plek)
+//   PlattegrondImage.gs - fetches the floor plan PNG from Drive at runtime
+//                        (see its own header)
 //   Subscription.gs   - subscription form generation/submission + the
 //                        Checklist webapp (doGet/getMyChecklist/setBezocht)
 //   Slides.gs         - presentation generation (orchestration)

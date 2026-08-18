@@ -20,7 +20,36 @@ niet manueel aan te maken — dat doet **📋Sheet structure setup/rebuild**
 
 `Actief` is een echte checkbox-kolom. Enkel rijen met een vinkje worden
 meegenomen in Form, Slides en checklist. Pas deze rijen aan naar de echte
-topics — de voorbeeldrijen zijn enkel een startpunt.
+topics — de voorbeeldrijen zijn enkel een startpunt. `Desk` is een echte
+dropdown (geen vrij tekstveld), gevoed vanuit het `Plattegrond`-tabblad
+hieronder — kies een bestaande plek, of maak eerst een nieuwe plek aan via
+**🗺️Plattegrond beheren**.
+
+**Plattegrond** — koppelt elke `Desk`-naam aan een positie op de
+kantoor-plattegrond, voor de "📍 toon op kaart"-knop in de checklist-webapp.
+Kolommen: `PlekNr` (een vast nummer, automatisch toegekend, wijzigt nooit —
+puur de interne sleutel die de X/Y-positie aan een plek gekoppeld houdt),
+`Label` (de naam zoals ze overal getoond wordt — vrij te hernoemen, moet
+uniek zijn), `X%`/`Y%` (positie op de plattegrond-afbeelding) en `Actief`.
+Vul dit tabblad NIET rechtstreeks in — gebruik het menu **🗺️Plattegrond
+beheren**: dat opent een schermpje met de plattegrond waar je (1) met één
+klik de bestaande `Desk`-namen uit Config kan importeren, (2) op de kaart
+kan klikken om elke plek zijn positie te geven, (3) op een naam kan klikken
+om te hernoemen (cascadeert automatisch naar elke cel in Config die die
+naam gebruikte), (4) een pin kan verslepen om te verplaatsen, en (5) een
+plek kan (de)activeren. Een plek hernoemen mag dus vrij — het vaste
+`PlekNr` en de positie blijven ongemoeid, enkel het label verandert overal
+mee.
+
+De plattegrond-afbeelding zelf staat niet in de code, maar wordt live uit
+Drive gehaald: er moet een map genaamd **`res`** naast dit Sheet-bestand
+staan (zelfde Drive-map), met daarin een PNG met de naam uit de
+`Plattegrond afbeelding`-rij in Instellingen (standaard `floorplan.png`).
+Ontbreekt de map/het bestand, dan krijg je een duidelijke foutmelding
+i.p.v. een lege plattegrond. Met de CI-opzet uit stap 9 (optioneel) gebeurt
+dit automatisch: elke `git push` zet `gmail-marketplace/res/floorplan.png`
+uit deze repo in die Drive-map (Git is dan de bron, Drive volgt) — zonder
+CI moet je het bestand zelf één keer manueel in die map zetten.
 
 **Aanmeldingen** — de kolomkoppen `Timestamp`, `E-mail`,
 `Interesse (ruw)` en per actief topic `Interesse_<topic>` / `Bezocht_<topic>`
@@ -46,7 +75,7 @@ codewijziging.) De startwaarde van elke rij is gewoon de sleutelnaam zelf
 (bv. `Review titel` start met waarde `Review titel`) — zo valt het meteen op
 in een gegenereerde presentatie als je iets vergat in te vullen.
 
-**Twee rijen zijn gereserveerd voor het script zelf** (herkenbaar aan de
+**Drie rijen zijn gereserveerd voor het script zelf** (herkenbaar aan de
 tekst in kolom **Notitie** — niet verwijderen of hernoemen, wel gerust de
 Waarde aanpassen):
 - `Review titel` — naast placeholder ook gebruikt in de **bestandsnaam**
@@ -57,6 +86,9 @@ Waarde aanpassen):
   topics-lijst-pagina komen (zie stap 3). Het template zelf hoeft hiervoor
   maar 1 bullet-regel te tonen — ontbrekende regels worden automatisch
   bijgemaakt tot dit aantal, met dezelfde bullet-opmaak.
+- `Plattegrond afbeelding` — bestandsnaam van de plattegrond-PNG, opgezocht
+  in de `res`-map naast dit Sheet-bestand in Drive (zie de Plattegrond-
+  paragraaf hierboven). Standaardwaarde `floorplan.png`.
 
 Alle andere rijen (zoals `Sprint goal`) zijn vrije, door jou toegevoegde
 placeholders zonder speciale betekenis voor de code — voeg er gerust bij,
@@ -77,13 +109,18 @@ de QR piepklein ongeacht de 600×600-bron.
 ## 2. Script koppelen
 
 Extensies > Apps Script — dit maakt een nieuw, aan deze Sheet gebonden
-script-project met zijn eigen Script-ID. De code zelf bestaat uit 13
-`.gs`-bestanden (`Core.gs`, `Sheets.gs`, `Subscription.gs`, `Slides.gs`,
-`SlidesBullets.gs`, `SlidesTable.gs`, `Archive.gs`, `Cleanup.gs`,
-`JiraAuth.gs`, `Jira.gs`, `JiraToConfig.gs`, `SelfTests.gs`, `Code.gs` —
-zie `CLAUDE_CODE_CONTEXT.md` voor wat elk bestand doet) plus
-`Checklist.html` en `appsscript.json` — samen alles wat in de
-`gmail-marketplace/`-map van deze repo staat.
+script-project met zijn eigen Script-ID. De code zelf bestaat uit 15
+`.gs`-bestanden (`Core.gs`, `Sheets.gs`, `Plattegrond.gs`,
+`PlattegrondImage.gs`, `Subscription.gs`, `Slides.gs`, `SlidesBullets.gs`,
+`SlidesTable.gs`, `Archive.gs`, `Cleanup.gs`, `JiraAuth.gs`, `Jira.gs`,
+`JiraToConfig.gs`, `SelfTests.gs`, `Code.gs` — zie `CLAUDE_CODE_CONTEXT.md`
+voor wat elk bestand doet) plus 2 `.html`-bestanden (`Checklist.html`,
+`PlattegrondDialog.html`) en `appsscript.json` — samen alles wat in de
+`gmail-marketplace/`-map van deze repo staat. (De `res/`-submap met de
+originele plattegrond-PNG/SVG hoort daar niet bij — dat is enkel
+brongmateriaal/bewerkbare bron in Git, niet iets dat `clasp push`
+meeneemt. De PNG die de webapp/dialoog effectief toont, moet apart en
+manueel in Drive gezet worden — zie de Plattegrond-paragraaf in stap 1.)
 
 **Aanbevolen: via `clasp`** (zie ook stap 9 voor de CI-opzet die hier
 verder op bouwt):
@@ -93,14 +130,15 @@ verder op bouwt):
    `"scriptId"`-veld.
 3. `clasp push --force` vanuit de `gmail-marketplace/`-map — dit zet alle
    bestanden in één keer klaar, inclusief het manifest (OAuth2-bibliotheek-
-   referentie, webapp-instellingen). Geen 13 keer manueel copy-pasten.
+   referentie, webapp-instellingen). Geen 15 keer manueel copy-pasten.
 
 **Alternatief: manueel** (geen lokale tooling nodig) — maak in de Apps
-Script-editor voor elk van de 13 `.gs`-bestanden hierboven een nieuw
-bestand met exact die naam, plak telkens de inhoud, en maak daarnaast
-`Checklist.html` (Bestand > Nieuw > HTML) met de inhoud van
-`Checklist.html`. Vergeet de OAuth2-bibliotheek niet toe te voegen (zie
-stap 7) — die staat niet automatisch klaar bij een manuele opzet.
+Script-editor voor elk van de 15 `.gs`-bestanden hierboven een nieuw
+bestand met exact die naam, plak telkens de inhoud, en maak daarnaast de 2
+`.html`-bestanden (Bestand > Nieuw > HTML) met de inhoud van `Checklist.html`
+resp. `PlattegrondDialog.html`. Vergeet de OAuth2-bibliotheek niet toe te
+voegen (zie stap 7) — die staat niet automatisch klaar bij een manuele
+opzet.
 
 Het inschrijfformulier vraagt bezoekers zelf hun e-mailadres in te typen
 (een manueel veld) — automatische herkenning vanaf het ingelogde account
@@ -239,14 +277,16 @@ Subscription form" en de eerste keer "Archive results".
 **🔷Fetch from Jira** wil gebruiken — zie stap 7, een aparte, optionele
 opzet.
 
-`SELFTEST_TOKEN` is enkel nodig als je de CI-opzet uit stap 9 wil
-gebruiken (self-tests laten meedraaien in de Bitbucket-pipeline) — zie
-daar voor de volledige uitleg. Los van deze Script properties horen ook
-nog **twee Bitbucket repository-variabelen** (`CLASPRC_JSON_MARKETPLACE`,
-`SELFTEST_TOKEN_MARKETPLACE`) en de **Jira OAuth-app-registratie**
-(Client ID/Secret bij Atlassian zelf, stap 7) bij de volledige set
-credentials voor dit project — telkens enkel nodig voor die ene
-optionele feature (Jira-koppeling resp. CI), niet voor de kernwerking.
+`SELFTEST_TOKEN` en `FLOORPLAN_SYNC_TOKEN` zijn enkel nodig als je de
+CI-opzet uit stap 9 wil gebruiken (self-tests, resp. de floor-plan-sync
+naar Drive, laten meedraaien in de Bitbucket-pipeline) — zie daar voor de
+volledige uitleg. Los van deze Script properties horen ook nog **drie
+Bitbucket repository-variabelen** (`CLASPRC_JSON_MARKETPLACE`,
+`SELFTEST_TOKEN_MARKETPLACE`, `FLOORPLAN_SYNC_TOKEN_MARKETPLACE`) en de
+**Jira OAuth-app-registratie** (Client ID/Secret bij Atlassian zelf, stap 7)
+bij de volledige set credentials voor dit project — telkens enkel nodig
+voor die ene optionele feature (Jira-koppeling resp. CI), niet voor de
+kernwerking.
 
 ## 5. Machtigingen
 
@@ -373,22 +413,34 @@ met `clasp push` vanuit een terminal gedeployed worden.
 > met een eigen Workspace-functieaccount, zie de TODO-lijst voor de
 > concrete stappen.
 
-1. **Script property `SELFTEST_TOKEN`** toevoegen (Apps Script >
-   Projectinstellingen > Script properties): een lang, willekeurig geheim
-   token naar keuze. Dit beveiligt de self-test-URL (`?selftest=<token>`)
-   tegen ongewenst extern aanroepen.
-2. In Bitbucket (Repository settings > Repository variables), twee nieuwe
+1. **Script properties `SELFTEST_TOKEN` en `FLOORPLAN_SYNC_TOKEN`**
+   toevoegen (Apps Script > Projectinstellingen > Script properties): elk
+   een lang, willekeurig geheim token naar keuze (twee verschillende
+   waarden). Die beveiligen respectievelijk de self-test-URL
+   (`?selftest=<token>`) en de floor-plan-sync-URL (`?floorplanSync=<token>`)
+   tegen ongewenst extern aanroepen. `FLOORPLAN_SYNC_TOKEN` weglaten kan —
+   die ene pipeline-stap wordt dan gewoon overgeslagen (zie stap 3).
+2. In Bitbucket (Repository settings > Repository variables), nieuwe
    variabelen aanmaken:
    - **`CLASPRC_JSON_MARKETPLACE`** — base64 van je lokale `.clasprc.json`
      (na `clasp login`): `base64 -w0 ~/.clasprc.json`.
    - **`SELFTEST_TOKEN_MARKETPLACE`** — exact dezelfde waarde als de
      `SELFTEST_TOKEN` Script property uit stap 1.
+   - **`FLOORPLAN_SYNC_TOKEN_MARKETPLACE`** (optioneel) — exact dezelfde
+     waarde als de `FLOORPLAN_SYNC_TOKEN` Script property uit stap 1. Zonder
+     deze variabele slaat de pipeline de floor-plan-sync gewoon over (met
+     een duidelijke regel in de build-log) — de rest van de deploy draait
+     gewoon door.
 3. Klaar — vanaf de volgende `git push` naar `main` met wijzigingen onder
    `gmail-marketplace/**` draait de pipeline-stap "Deploy gmail-marketplace"
    automatisch (zie `bitbucket-pipelines.yml`, hoofdstuk root van de repo):
    `clasp push` → `clasp deploy` (vaste deployment-ID, dezelfde `/exec`-URL
    blijft dus geldig) → een `curl` naar `?selftest=...` die de build laat
-   falen als de JSON-respons geen `"success":true` bevat.
+   falen als de JSON-respons geen `"success":true` bevat → (indien
+   `FLOORPLAN_SYNC_TOKEN_MARKETPLACE` gezet is) een `curl POST` van
+   `gmail-marketplace/res/floorplan.png` naar `?floorplanSync=...`, zodat de
+   PNG in de `res`-map naast de Sheet in Drive altijd overeenkomt met wat in
+   Git staat (zie `handleFloorplanSyncRequest()`, `PlattegrondImage.gs`).
 
 > **Waarom niet `clasp run`?** Dat Apps Script-CI-mechanisme vereist een
 > Standard GCP-project, een aparte "API executable"-deployment, én eigen
