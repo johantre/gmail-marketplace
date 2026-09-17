@@ -102,7 +102,8 @@ function generateSlides() {
   var reviewTitel = getInstellingWaarde('Review titel');
   var fileName = 'Marketplace presentatie' + (reviewTitel ? ' — ' + reviewTitel : '') + ' — ' + timestamp;
   var templateFile = DriveApp.getFileById(settings.slidesTemplateId);
-  var copy = makeCopyInDriveFolder(templateFile, fileName, settings.driveFolderId);
+  var placement = makeCopyInDriveFolder(templateFile, fileName, settings.driveFolderId);
+  var copy = placement.file;
 
   var deck = SlidesApp.openById(copy.getId());
   applyInstellingenPlaceholders(deck);
@@ -184,8 +185,23 @@ function generateSlides() {
   });
 
   deck.saveAndClose();
-  logLink('Presentatie', copy.getUrl());
-  ui.alert('Presentation ready.\n\nLink: ' + copy.getUrl());
+  // A failed Drive placement must never be silent: written into the Links
+  // tab's Notitie column (durable, still visible after the alert is
+  // dismissed — see logLink()) as well as the alert itself, since a
+  // dismissed-without-reading Ui.alert is a real, observed habit, not a
+  // hypothetical.
+  var placementNote = placement.movedToFolder
+    ? ''
+    : 'Could NOT be placed in DRIVE_FOLDER_ID — check where this file actually ended up (likely next to the Slides template itself).';
+  logLink('Presentatie', copy.getUrl(), placementNote);
+  var message = 'Presentation ready.\n\nLink: ' + copy.getUrl();
+  if (!placement.movedToFolder) {
+    message = '⚠️ WARNING: could not place this presentation in the shared Drive folder ' +
+      '(DRIVE_FOLDER_ID) — it exists, but likely landed next to the Slides template ' +
+      'instead. Check the Links tab (Notitie column) for this note if you lose track ' +
+      'of it.\n\n' + message;
+  }
+  ui.alert(message);
 }
 
 // Searches, across all slides of the template, for every spot where a text

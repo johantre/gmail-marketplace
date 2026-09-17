@@ -71,14 +71,20 @@ function isInterestedIn(interesseRawArray, t) {
 // requirement). DriveApp's addFile/removeFile mechanism doesn't work on
 // folders in a Shared Drive ("Cannot use this operation on a shared drive
 // item") — not fatal: on failure the file just stays in "My Drive", and the
-// rest of the action continues normally.
+// rest of the action continues normally. Returns true if the file ended up
+// in the target folder (or there was nothing to do — no folderId given),
+// false if a move was attempted and failed. Never throws — callers decide
+// how loudly to surface a false result; this must never be silently
+// swallowed with no trace anywhere (see makeCopyInDriveFolder() callers).
 function moveFileToDriveFolder(file, folderId) {
-  if (!folderId) return;
+  if (!folderId) return true;
   try {
     DriveApp.getFolderById(folderId).addFile(file);
     DriveApp.getRootFolder().removeFile(file);
+    return true;
   } catch (err) {
     Logger.log('Could not move file to Drive folder ' + folderId + ' (staying in My Drive): ' + err);
+    return false;
   }
 }
 
@@ -95,15 +101,21 @@ function moveFileToDriveFolder(file, folderId) {
 // entirely. Falls back to the old copy-then-move approach (and ultimately
 // to a plain copy in "My Drive") if this ever fails for some other reason
 // — never allowed to block the actual presentation from being generated.
+// Returns {file, movedToFolder} rather than a bare File: movedToFolder is
+// false whenever the copy could NOT be confirmed to be inside folderId
+// (e.g. DRIVE_FOLDER_ID now points at a moved/deleted/inaccessible folder,
+// live-confirmed risk after a Drive reorganization) — callers MUST surface
+// this to the user (both in the alert and written somewhere durable, e.g.
+// the Links tab), never let it disappear into only the execution log.
 function makeCopyInDriveFolder(sourceFile, name, folderId) {
-  if (!folderId) return sourceFile.makeCopy(name);
+  if (!folderId) return { file: sourceFile.makeCopy(name), movedToFolder: true };
   try {
-    return sourceFile.makeCopy(name, DriveApp.getFolderById(folderId));
+    return { file: sourceFile.makeCopy(name, DriveApp.getFolderById(folderId)), movedToFolder: true };
   } catch (err) {
     Logger.log('makeCopyInDriveFolder: could not create the copy directly in Drive folder ' + folderId + ', falling back to copy + move: ' + err);
     var copy = sourceFile.makeCopy(name);
-    moveFileToDriveFolder(copy, folderId);
-    return copy;
+    var moved = moveFileToDriveFolder(copy, folderId);
+    return { file: copy, movedToFolder: moved };
   }
 }
 
@@ -153,10 +165,14 @@ function applyBrandFont(sheet) {
 }
 
 // ---------- Links tab (audit trail of every generated link) ----------
-function logLink(label, url) {
+// note is optional — used to flag a problem (e.g. a Drive-placement
+// failure) permanently in the sheet itself, not just in a Ui.alert someone
+// might dismiss without reading (live-confirmed habit: "macht der
+// gewoonte van weg-klikken-dialog").
+function logLink(label, url, note) {
   var ss = SpreadsheetApp.getActive();
   var sheet = ss.getSheetByName('Links') || ss.insertSheet('Links');
-  sheet.appendRow([new Date(), label, url]);
+  sheet.appendRow([new Date(), label, url, note || '']);
 }
 
 // Finds the most recently logged link with this label in the existing
